@@ -1,4 +1,2 @@
 streamlit
-langchain
-langchain_ollama
-langchain_core
+llama_cpp-python
