@@ -1,68 +1,70 @@
 import streamlit as st
+from llama_cpp import Llama
 
-from langchain_ollama import ChatOllama
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import SystemMessagePromptTemplate, HumanMessagePromptTemplate, AIMessagePromptTemplate
-from langchain_core.prompts import ChatPromptTemplate
+if 'llm' not in st.session_state:
+    st.session_state.llm = Llama.from_pretrained(
+        repo_id="bartowski/Llama-3.2-3B-Instruct-GGUF",
+        filename="Llama-3.2-3B-Instruct-Q8_0.gguf",  
+        verbose=True,
+        n_ctx=32768,
+        n_threads=2,
+        chat_format="chatml"
+    )
 
-st.title(":brain: Make Your Own History Enabled Chat Application with Ollama and Langchain!!!")
-st.write("LEARN LLM @ KGP Talkie: https://www.youtube.com/kgptalkie")
+# Define the function to get responses from the model
+def respond(message, history):
+    messages = []
 
-model = ChatOllama(model="llama3.2:latest", base_url="http://localhost:11434/")
+    for user_message, assistant_message in history:
+        if user_message:
+            messages.append({"role": "user", "content": user_message})
+        if assistant_message:
+            messages.append({"role": "assistant", "content": assistant_message})
 
-system_message = SystemMessagePromptTemplate.from_template("You are a helpful AI Assistant. You work as teacher for 5th grade students. You explain things in short and brief.")
+    messages.append({"role": "user", "content": message})
+
+    response = ""
+    # Stream the response from the model
+    response_stream = st.session_state.llm.create_chat_completion(
+        messages=messages,
+        stream=True,
+        max_tokens=512,  # Use a default value for simplicity
+        temperature=0.7,  # Use a default value for simplicity
+        top_p=0.95  # Use a default value for simplicity
+    )
+
+    # Collect the response chunks
+    for chunk in response_stream:
+        if len(chunk['choices'][0]["delta"]) != 0 and "content" in chunk['choices'][0]["delta"]:
+            response += chunk['choices'][0]["delta"]["content"]
+
+    return response  # Return the full response
+
+# Streamlit UI
+st.title("🧠 Chatbot using LLM Llama-3.2 !!!")
+st.write("### LLM used is bartowski/Llama-3.2-3B-Instruct-GGUF ")
+
+# User input field
+user_message = st.text_area("Your Message:", "")
 
 if "chat_history" not in st.session_state:
     st.session_state['chat_history'] = []
 
-with st.form("llm-form"):
-    text = st.text_area("Enter your question here.")
-    submit = st.form_submit_button("Submit")
+# Button to send the message
+if st.button("Send"):
+    if user_message:  # Check if user has entered a message
+        # Get the response from the model
+        response = respond(user_message, st.session_state['chat_history'])
+        st.write(f"**🧠 Assistant**: {response}")
+        
+        # Add user message and model response to history
+        st.session_state['chat_history'].append((user_message, response))
 
-def generate_response(chat_histroy):
-    chat_template = ChatPromptTemplate.from_messages(chat_histroy)
+        # Clear the input field after sending
+        user_message = ""  # Reset user_message to clear input
 
-    chain = chat_template|model|StrOutputParser()
-
-    response = chain.invoke({})
-
-    return response
-
-# user message in 'user' key
-# ai message in 'assistant' key
-def get_history():
-    chat_history = [system_message]
-    for chat in st.session_state['chat_history']:
-        prompt = HumanMessagePromptTemplate.from_template(chat['user'])
-        chat_history.append(prompt)
-
-        ai_message = AIMessagePromptTemplate.from_template(chat['assistant'])
-        chat_history.append(ai_message)
-
-    return chat_history
-
-
-if submit and text:
-    with st.spinner("Generating response..."):
-        prompt = HumanMessagePromptTemplate.from_template(text)
-
-        chat_history = get_history()
-
-        chat_history.append(prompt)
-
-        # st.write(chat_history)
-
-        response = generate_response(chat_history)
-
-        st.session_state['chat_history'].append({'user': text, 'assistant': response})
-
-        # st.write("response: ", response)
-
-        # st.write(st.session_state['chat_history'])
-
-
-st.write('## Chat History')
-for chat in reversed(st.session_state['chat_history']):
-       st.write(f"**:adult: User**: {chat['user']}")
-       st.write(f"**:brain: Assistant**: {chat['assistant']}")
-       st.write("---")
+st.write("## Chat History")
+for user_msg, assistant_msg in reversed(st.session_state['chat_history']):
+    st.write(f"**🧑 User**: {user_msg}")
+    st.write(f"**🧠 Assistant**: {assistant_msg}")
+    st.write("---")
